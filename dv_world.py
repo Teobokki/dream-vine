@@ -89,16 +89,54 @@ class World:
         forest = self.n.fbm2(X / 90.0 + 300, Y / 90.0, 2)
         pt = 0.004 + np.clip(forest, 0, 1) * 0.05
         cand = (t < pt) & (hh > SEA + 1)
+        # 1.4.0 autumn: low-frequency "Autumn Forest" regions where most trees turn; elsewhere a mix of green and autumn
+        aut = self.n2.fbm2(X / 200.0 - 700, Y / 200.0 + 300, 2)
+        autumn_trees = []
         for i, j in zip(*np.nonzero(cand)):
             gx, gy = i - M, j - M
             base = int(hh[i, j])
             if 0 <= gx < CS and 0 <= gy < CS and c[gx, gy, base] != bl.GRASS:
                 continue
             th = 4 + int(_hash01(X[i, j], Y[i, j], self.seed, 2) * 3)
-            self._tree(c, gx, gy, base + 1, th)
+            ah = _hash01(X[i, j], Y[i, j], self.seed, 3)
+            share = 0.85 if aut[i, j] > 0.12 else 0.35
+            pal = None
+            if ah < share:
+                k = int(_hash01(X[i, j], Y[i, j], self.seed, 4) * 100)
+                main = bl.AUTUMN_ORANGE if k < 36 else bl.AUTUMN_GOLD if k < 66 else bl.AUTUMN_RED if k < 90 else bl.AUTUMN_BROWN
+                pal = (main, int(X[i, j]), int(Y[i, j]))
+            self._tree(c, gx, gy, base + 1, th, pal)
+            if pal is not None:
+                autumn_trees.append((gx, gy, int(X[i, j]), int(Y[i, j])))
+        # fallen leaves under autumn trees: leaf-covered grass carpets + the odd leaf pile (order independent, so
+        # trees whose litter crosses a chunk border look identical on both sides)
+        for gx, gy, wx, wy in autumn_trees:
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    lx, ly = gx + dx, gy + dy
+                    d2 = dx * dx + dy * dy
+                    if not (0 <= lx < CS and 0 <= ly < CS) or d2 == 0 or d2 > 10:
+                        continue
+                    hz = int(h[lx, ly])
+                    if c[lx, ly, hz] not in (bl.GRASS, bl.LEAF_LITTER):
+                        continue
+                    r = _hash01(wx + dx, wy + dy, self.seed, 6)
+                    if r < 0.85 - 0.07 * d2:
+                        c[lx, ly, hz] = bl.LEAF_LITTER
+                    if d2 >= 4 and hz + 1 < H and c[lx, ly, hz + 1] == bl.AIR and \
+                            _hash01(wx * 3 + dx, wy * 5 + dy, self.seed, 7) < 0.035:
+                        c[lx, ly, hz + 1] = bl.LEAF_PILE
         return c
 
-    def _tree(self, c, x, y, z0, th):
+    def _leaf(self, pal, wx, wy, z):
+        if pal is None:
+            return bl.LEAVES
+        u = ((wx * 73856093) ^ (wy * 19349663) ^ (z * 83492791) ^ self.seed) & 0xFFFF
+        if u % 100 < 70:
+            return pal[0]
+        return bl.AUTUMN_LEAVES[(u >> 7) % 4]
+
+    def _tree(self, c, x, y, z0, th, pal=None):
         top = z0 + th
         for dz in range(-3, 2):
             r = 2 if dz < 0 else 1
@@ -111,7 +149,7 @@ class World:
                         continue
                     X, Y = x + dx, y + dy
                     if 0 <= X < CS and 0 <= Y < CS and 0 <= zz < H and c[X, Y, zz] == bl.AIR:
-                        c[X, Y, zz] = bl.LEAVES
+                        c[X, Y, zz] = bl.LEAVES if pal is None else self._leaf(pal, pal[1] + dx, pal[2] + dy, zz)
         if 0 <= x < CS and 0 <= y < CS:
             for zz in range(z0, min(H, top)):
                 c[x, y, zz] = bl.LOG

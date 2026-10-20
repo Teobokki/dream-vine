@@ -1,4 +1,4 @@
-﻿#define MyVer "1.3.2"
+﻿#define MyVer "1.4.0"
 [Setup]
 AppId={{7D1E5A92-3C4B-4F6E-A8D1-2B9C0E7F4A63}
 AppName=DREAM VINE

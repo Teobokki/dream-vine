@@ -119,6 +119,7 @@ class Game(DirectObject):
         # text chat + VINE BUILD
         self.chat = dv_chat.Chat(self, meta.get("chat"))
         self.vb_ui = None; self.build_job = None; self.build_undo = []; self._ui_closed_t = 0.0; self.build_wire = None
+        self._init_leaves()
         self.app.task_mgr.add(self.update, "dv-game-update")
 
     # ------------------------------------------------------------------ setup
@@ -337,6 +338,7 @@ class Game(DirectObject):
                 if (k[0] - pc[0]) ** 2 + (k[1] - pc[1]) ** 2 > (R + 1.5) ** 2:
                     for n in self.chunk_np.pop(k):
                         if n: n.remove_node()
+                    self.leaf_cols.pop(k, None)
             for k in list(self.world.chunks):
                 if (k[0] - pc[0]) ** 2 + (k[1] - pc[1]) ** 2 > (R + 3) ** 2:
                     self.world.unload(k)
@@ -378,6 +380,16 @@ class Game(DirectObject):
         for n in (ns, nw):
             if n: n.set_pos(k[0] * dw.CS, k[1] * dw.CS, 0)
         self.chunk_np[k] = (ns, nw)
+        c = self.world.chunks.get(k)
+        if c is not None:                               # columns with autumn leaves (falling-leaf emitters)
+            m = np.isin(c, bl.AUTUMN_LEAVES)
+            has = m.any(2)
+            if has.any():
+                xs, ys = np.nonzero(has)
+                zs = np.argmax(m[xs, ys], axis=1)
+                self.leaf_cols[k] = np.stack([xs + k[0] * dw.CS, ys + k[1] * dw.CS, zs], 1)
+            else:
+                self.leaf_cols.pop(k, None)
 
     def mark_dirty(self, x, y):
         cx, cy = x // dw.CS, y // dw.CS
@@ -761,6 +773,7 @@ class Game(DirectObject):
             else:
                 self.crack.hide()
             self.update_mobs(dt)
+        self.update_leaves(dt)
         if self.state == "inventory" and self.cursor_np and self.app.mouseWatcherNode.has_mouse():
             m = self.app.mouseWatcherNode.get_mouse()
             self.cursor_np.set_pos(m.x * self.app.getAspectRatio(), 0, m.y)
@@ -983,8 +996,8 @@ class Game(DirectObject):
             kind, tier = bl.tool_info(self.held() or 0)
             if B.tier < 0 or (kind == B.tool and tier >= B.tier):
                 it = B.drop if B.drop is not None else b
-                if b == bl.LEAVES:
-                    it = bl.APPLE if random.random() < 0.06 else (bl.LEAVES if random.random() < 0.25 else 0)
+                if b == bl.LEAVES or b in bl.AUTUMN_LEAVES:
+                    it = bl.APPLE if random.random() < 0.06 else (b if random.random() < 0.25 else 0)
                 if it:
                     self.give(it, 1)
 
@@ -1019,11 +1032,66 @@ class Game(DirectObject):
             return
         z = self.world.surface_z(x, y)
         ground = self.world.get(x, y, z - 1)
-        if ground == bl.WATER or ground == bl.LEAVES or (want_grass and ground != bl.GRASS):
+        if ground == bl.WATER or ground in bl.LEAF_BLOCKS or (want_grass and ground not in (bl.GRASS, bl.LEAF_LITTER)):
             return
         if self.world.get(x, y, z) != bl.AIR or self.world.get(x, y, z + 1) != bl.AIR:
             return
         self.mobs.append(cls(self, (x + 0.5, y + 0.5, z + 0.01)))
+
+    # ------------------------------------------------------------------ falling autumn leaves (1.4.0)
+    MAX_LEAVES = 48
+
+    def _init_leaves(self):
+        self.leaf_cols = {}
+        self.leaf_root = self.root.attach_new_node("falling-leaves")
+        self.leaf_root.set_texture(self.app.atlas); self.leaf_root.set_transparency(TransparencyAttrib.M_binary)
+        self.leaf_root.set_two_sided(True); self.leaf_root.set_light_off(1)
+        cm = CardMaker("leaf"); cm.set_frame(-0.5, 0.5, -0.5, 0.5)
+        u0, v0, u1, v1 = bl.tile_uv(bl.TILE["falling_leaf"]); cm.set_uv_range((u0, v0), (u1, v1))
+        cols = [bl.AUTUMN_RGB[b] for b in bl.AUTUMN_LEAVES]
+        self.leaf_pool = []
+        for i in range(self.MAX_LEAVES):
+            n = self.leaf_root.attach_new_node(cm.generate())
+            n.set_scale(0.22); n.hide()
+            r, g, b = cols[i % 4]; n.set_color(r / 255.0, g / 255.0, b / 255.0, 1)
+            self.leaf_pool.append([n, False, 0.0, 0.0, 0.0, 0.0, 0.0])   # node, alive, x, y, z, phase, life
+        self.leaf_spawn_t = 0.0
+
+    def update_leaves(self, dt):
+        self.leaf_root.set_color_scale(self._light, self._light, self._light, 1)
+        if self.state == "paused":
+            return
+        px, py = self.pos[0], self.pos[1]
+        self.leaf_spawn_t += dt
+        if self.leaf_spawn_t > 0.12:
+            self.leaf_spawn_t = 0.0
+            pc = (int(px // dw.CS), int(py // dw.CS))
+            near = [self.leaf_cols[(pc[0] + a, pc[1] + b)] for a in (-1, 0, 1) for b in (-1, 0, 1)
+                    if (pc[0] + a, pc[1] + b) in self.leaf_cols]
+            free = [L for L in self.leaf_pool if not L[1]]
+            if near and free:
+                for _ in range(min(2, len(free))):
+                    arr = near[random.randrange(len(near))]
+                    x, y, z = arr[random.randrange(len(arr))]
+                    if (x + 0.5 - px) ** 2 + (y + 0.5 - py) ** 2 > 24 ** 2:
+                        continue
+                    L = free.pop()
+                    L[1:] = [True, x + random.random(), y + random.random(), z - 0.05, random.uniform(0, 6.28), 0.0]
+                    L[0].show()
+        t = globalClock.get_frame_time()
+        for L in self.leaf_pool:
+            if not L[1]:
+                continue
+            L[6] += dt
+            ph = L[5]
+            L[2] += (0.35 * math.sin(t * 1.3 + ph) + 0.25) * dt
+            L[3] += 0.35 * math.cos(t * 1.1 + ph * 1.7) * dt
+            L[4] -= (0.55 + 0.25 * math.sin(t * 2.0 + ph)) * dt
+            b = self.world.get(int(math.floor(L[2])), int(math.floor(L[3])), int(math.floor(L[4])), bl.STONE)
+            if L[6] > 14.0 or (bl.SOLID[b] and b not in bl.LEAF_BLOCKS) or b == bl.WATER:
+                L[1] = False; L[0].hide(); continue
+            L[0].set_pos(L[2], L[3], L[4])
+            L[0].set_hpr(t * 60 + ph * 57, 50 * math.sin(t * 2.2 + ph), 35 * math.cos(t * 1.7 + ph))
 
     # ------------------------------------------------------------------ sky
     def daylight(self):
@@ -1230,7 +1298,7 @@ class Game(DirectObject):
         if c is None:
             return None
         col = c[x % dw.CS, y % dw.CS]
-        ok = bl.SOLID[col] & ~np.isin(col, (bl.LEAVES, bl.LOG, bl.CHERRY_LEAVES)) | (col == bl.WATER)
+        ok = bl.SOLID[col] & ~np.isin(col, (bl.LOG,) + bl.LEAF_BLOCKS) | (col == bl.WATER)
         nz = np.nonzero(ok)[0]
         return int(nz.max()) + 1 if len(nz) else None
 
@@ -1285,7 +1353,7 @@ class Game(DirectObject):
                 fb = b0 if (bl.OPAQUE[b0] and bl.SOLID[b0] and b0 not in (bl.LANTERN,)) else bl.COBBLE
                 for d in range(1, 16):
                     k = (wx, wy, base - d)
-                    if k in cells or base - d < 1 or self.world.get(*k) not in (bl.AIR, bl.WATER, bl.LEAVES, bl.LOG, bl.CHERRY_LEAVES):
+                    if k in cells or base - d < 1 or self.world.get(*k) not in (bl.AIR, bl.WATER, bl.LOG) + bl.LEAF_BLOCKS:
                         break
                     cells[k] = fb
         cxw, cyw = to_w((x0 + x1) // 2, (y0 + y1) // 2)

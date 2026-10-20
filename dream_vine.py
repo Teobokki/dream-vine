@@ -3,7 +3,7 @@ All code, textures, names and art are original and generated procedurally."""
 import os, sys, json, time, math, random, threading, tempfile, urllib.request, shutil, traceback
 
 APP_NAME = "DREAM VINE"
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.4.0"
 REPO = "Teobokki/dream-vine"
 UPDATE_URL = "https://raw.githubusercontent.com/%s/main/latest.json" % REPO
 RELEASES_URL = "https://github.com/%s/releases/latest" % REPO
@@ -303,6 +303,7 @@ class App(ShowBase):
         self.camLens.set_min_fov(float(self.settings["fov"]))
         self.camLens.set_near_far(0.1, 400)
         s = self.new_screen(0.12)
+        self._menu_leaves(s)
         logo = OnscreenImage(parent=s, image=self.tex_logo, pos=(0, 0, 0.55), scale=(0.95, 1, 0.95 * 180 / 660))
         logo.set_transparency(TransparencyAttrib.M_alpha)
         sp = self.text(s, random.choice(SPLASHES), (0.78, 0.34), 0.055, (1, 1, 0.25, 1))
@@ -315,6 +316,38 @@ class App(ShowBase):
         self.button(s, "Quit Game", (0, -0.33), self.userExit)
         self.text(self.screen, "DREAM VINE " + APP_VERSION, (-1.0 * self.getAspectRatio() + 0.03, -0.96), 0.045, align=TextNode.A_left)
         self.text(self.screen, "\u00a92026 EX Inc./HYPERION DIGITAL \u00a92026", (1.0 * self.getAspectRatio() - 0.03, -0.96), 0.045, align=TextNode.A_right)
+
+    def _menu_leaves(self, parent, n=26):
+        """1.4.0: autumn leaves drifting across the title screen (drawn behind the logo and buttons)."""
+        from panda3d.core import CardMaker
+        root = parent.attach_new_node("menu-leaves")
+        root.set_texture(self.atlas); root.set_transparency(TransparencyAttrib.M_binary)
+        cm = CardMaker("mleaf"); cm.set_frame(-0.5, 0.5, -0.5, 0.5)
+        u0, v0, u1, v1 = bl.tile_uv(bl.TILE["falling_leaf"]); cm.set_uv_range((u0, v0), (u1, v1))
+        ar = self.getAspectRatio()
+        cols = [bl.AUTUMN_RGB[b] for b in bl.AUTUMN_LEAVES]
+        leaves = []
+        for i in range(n):
+            nd = root.attach_new_node(cm.generate())
+            r, g, b = cols[i % 4]; nd.set_color(r / 255.0, g / 255.0, b / 255.0, 0.95)
+            sc = random.uniform(0.035, 0.07); nd.set_scale(sc)
+            leaves.append([nd, random.uniform(-ar, ar), random.uniform(-1.1, 1.1), random.uniform(0, 6.28),
+                           random.uniform(0.06, 0.13) * (sc / 0.05)])
+        def step(task):
+            if root.is_empty():
+                return task.done
+            dt = min(globalClock.get_dt(), 0.05); t = task.time; ar2 = self.getAspectRatio()
+            for L in leaves:
+                nd, x, z, ph, sp = L
+                x += (0.05 + 0.06 * math.sin(t * 0.9 + ph)) * dt
+                z -= sp * dt
+                if z < -1.12 or x > ar2 + 0.1:
+                    z = random.uniform(1.08, 1.2); x = random.uniform(-ar2 - 0.1, ar2 - 0.2)
+                L[1], L[2] = x, z
+                nd.set_pos(x, 0, z); nd.set_r(math.degrees(ph) + 70 * math.sin(t * 1.4 + ph))
+                nd.set_sx(nd.get_sz() * (0.35 + 0.65 * abs(math.cos(t * 1.8 + ph))))
+            return task.cont
+        self.task_mgr.add(step, "menu-leaves")
 
     def _pulse(self, task):
         if self.screen is None or self._splash is None or self._splash.is_empty():

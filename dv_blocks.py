@@ -8,6 +8,11 @@ AIR, GRASS, DIRT, STONE, COBBLE, SAND, WATER, BEDROCK, LOG, LEAVES, PLANKS, COAL
 # decorative building blocks (added in 1.3.0 for VINE BUILD; also in the creative inventory)
 RED_WOOD, DARK_WOOD, ROOF_TILE, WHITE_STONE, GOLD_BLOCK, LANTERN, CHERRY_LEAVES, RED_WOOL, BLACK_WOOL, BLUE_WOOL, \
     YELLOW_WOOL, GREEN_WOOL, PINK_WOOL, SANDSTONE, SNOW, STONE_BRICKS, CONCRETE, THATCH = range(22, 40)
+# autumn foliage (added in 1.4.0)
+AUTUMN_ORANGE, AUTUMN_RED, AUTUMN_GOLD, AUTUMN_BROWN = range(40, 44)
+LEAF_LITTER, LEAF_PILE = 44, 45
+AUTUMN_LEAVES = (AUTUMN_ORANGE, AUTUMN_RED, AUTUMN_GOLD, AUTUMN_BROWN)
+AUTUMN_RGB = {AUTUMN_ORANGE: (226, 118, 34), AUTUMN_RED: (186, 42, 30), AUTUMN_GOLD: (236, 186, 48), AUTUMN_BROWN: (146, 94, 50)}
 
 # item ids (non-block)
 STICK, COAL, IRON, GOLD, DIAMOND, APPLE, RAW_MEAT = 100, 101, 102, 103, 104, 105, 106
@@ -77,7 +82,14 @@ BLOCKS = {
     STONE_BRICKS: B("Stone Bricks", "stone_bricks", 2.0, "pickaxe", 0),
     CONCRETE: B("Grey Concrete", "concrete", 2.0, "pickaxe", 0),
     THATCH: B("Thatch", "thatch", 0.5),
+    AUTUMN_ORANGE: B("Orange Autumn Leaves", "autumn_orange", 0.2, None, drop=0, transparent=True, cutout=True),
+    AUTUMN_RED: B("Red Autumn Leaves", "autumn_red", 0.2, None, drop=0, transparent=True, cutout=True),
+    AUTUMN_GOLD: B("Golden Autumn Leaves", "autumn_gold", 0.2, None, drop=0, transparent=True, cutout=True),
+    AUTUMN_BROWN: B("Brown Autumn Leaves", "autumn_brown", 0.2, None, drop=0, transparent=True, cutout=True),
+    LEAF_LITTER: B("Leaf-Covered Grass", ("litter_top", "litter_side", "dirt"), 0.6, "shovel", drop=DIRT),
+    LEAF_PILE: B("Fallen Leaf Pile", "leaf_pile", 0.2, None, transparent=True, cutout=True),
 }
+LEAF_BLOCKS = (LEAVES, CHERRY_LEAVES) + AUTUMN_LEAVES
 ITEMS = {STICK: "Stick", COAL: "Coal", IRON: "Iron Ingot", GOLD: "Gold Ingot", DIAMOND: "Diamond", APPLE: "Apple",
          RAW_MEAT: "Mossbuck Meat"}
 for k in TOOL_KINDS:
@@ -85,7 +97,7 @@ for k in TOOL_KINDS:
         ITEMS[tool_id(k, t)] = "%s %s" % (TIERS[t], k.capitalize())
 FOOD = {APPLE: 4, RAW_MEAT: 5}
 CREATIVE_ITEMS = [GRASS, DIRT, STONE, COBBLE, SAND, GRAVEL, LOG, PLANKS, LEAVES, GLASS, TABLE, BRICKS, WOOL, MOSSY,
-                  VINE_BLOCK, RED_WOOD, DARK_WOOD, ROOF_TILE, WHITE_STONE, GOLD_BLOCK, LANTERN, CHERRY_LEAVES, RED_WOOL,
+                  VINE_BLOCK, RED_WOOD, DARK_WOOD, ROOF_TILE, WHITE_STONE, GOLD_BLOCK, LANTERN, CHERRY_LEAVES, AUTUMN_ORANGE, AUTUMN_RED, AUTUMN_GOLD, AUTUMN_BROWN, LEAF_PILE, LEAF_LITTER, RED_WOOL,
                   BLACK_WOOL, BLUE_WOOL, YELLOW_WOOL, GREEN_WOOL, PINK_WOOL, SANDSTONE, SNOW, STONE_BRICKS, CONCRETE, THATCH, COAL_ORE, IRON_ORE, GOLD_ORE, DIAMOND_ORE, BEDROCK, WATER, STICK, COAL, IRON, GOLD,
                   DIAMOND, APPLE, RAW_MEAT] + [tool_id(k, t) for t in range(4) for k in TOOL_KINDS]
 
@@ -299,6 +311,35 @@ def tex(name):
         img = _blobs(r, img, (196, 104, 150), 4, 0, 0, 10)
         a = np.where(r.rand(T, T) < 0.16, 0, 255).astype(np.float32)
         return np.concatenate([img, a[..., None]], 2)
+    if name.startswith("autumn_"):
+        base = {"autumn_orange": (226, 118, 34), "autumn_red": (186, 42, 30), "autumn_gold": (236, 186, 48),
+                "autumn_brown": (146, 94, 50)}[name]
+        img = _noise(r, base, 28)
+        img = _blobs(r, img, tuple(min(255, v + 34) for v in base), 6, 0, 1, 12)
+        img = _blobs(r, img, tuple(int(v * 0.7) for v in base), 4, 0, 0, 10)
+        a = np.where(r.rand(T, T) < 0.18, 0, 255).astype(np.float32)
+        return np.concatenate([img, a[..., None]], 2)
+    if name in ("litter_top", "leaf_pile"):
+        img = tex("grass_top")[..., :3].copy() if name == "litter_top" else _noise(r, (176, 104, 40), 26)
+        for col, n in (((226, 118, 34), 9), ((186, 42, 30), 6), ((236, 186, 48), 8), ((146, 94, 50), 6)):
+            img = _blobs(r, img, col, n if name == "litter_top" else n + 4, 0, 1, 16)
+        if name == "litter_top":
+            return _rgba(img)
+        a = np.where(r.rand(T, T) < 0.08, 0, 255).astype(np.float32)
+        return np.concatenate([img, a[..., None]], 2)
+    if name == "litter_side":
+        d = tex("grass_side")
+        for x in range(T):
+            if r.rand() < 0.55:
+                d[0:2, x, :3] = [(226, 118, 34), (186, 42, 30), (236, 186, 48), (146, 94, 50)][r.randint(0, 4)]
+        return d
+    if name == "falling_leaf":
+        img = np.zeros((T, T, 4), np.float32)
+        yy, xx = np.mgrid[0:T, 0:T]
+        m = ((xx - 7.5) / 6.5) ** 2 + ((yy - 7.5) / 4.0) ** 2 <= 1.0
+        img[m] = (235, 235, 235, 255)
+        img[7:9, 1:15][m[7:9, 1:15]] = (170, 170, 170, 255)
+        return img
     if name.endswith("_wool"):
         col = {"red_wool": (190, 40, 40), "black_wool": (34, 34, 40), "blue_wool": (52, 80, 190), "yellow_wool": (236, 200, 50),
                "green_wool": (70, 140, 52), "pink_wool": (238, 140, 176)}[name]
@@ -391,7 +432,8 @@ TILE_NAMES = ["grass_top", "grass_side", "dirt", "stone", "cobble", "sand", "wat
               "leaves", "planks", "coal_ore", "iron_ore", "gold_ore", "diamond_ore", "gravel", "glass", "table_top",
               "table_side", "bricks", "wool", "mossy", "vine_top", "vine_side", "red_wood", "dark_wood", "roof_tile",
               "white_stone", "gold_block", "lantern_side", "lantern_top", "cherry_leaves", "red_wool", "black_wool", "blue_wool",
-              "yellow_wool", "green_wool", "pink_wool", "sandstone", "sandstone_top", "snow", "stone_bricks", "concrete", "thatch"]
+              "yellow_wool", "green_wool", "pink_wool", "sandstone", "sandstone_top", "snow", "stone_bricks", "concrete", "thatch",
+              "autumn_orange", "autumn_red", "autumn_gold", "autumn_brown", "falling_leaf", "litter_top", "litter_side", "leaf_pile"]
 TILE = {n: i for i, n in enumerate(TILE_NAMES)}
 ICON_TILE = {}      # item id -> tile index for non-block items
 CRACK_TILE0 = 0

@@ -1428,7 +1428,8 @@ FRIENDLY = {bl.STONE: "rough stone", bl.STONE_BRICKS: "stone", bl.COBBLE: "cobbl
             bl.RED_WOOD: "red wood", bl.ROOF_TILE: "dark roof tiles", bl.WHITE_STONE: "white stone", bl.GOLD_BLOCK: "gold",
             bl.GLASS: "glass", bl.BRICKS: "bricks", bl.SANDSTONE: "sandstone", bl.CONCRETE: "concrete", bl.SNOW: "snow",
             bl.THATCH: "thatch", bl.MOSSY: "mossy stone", bl.WOOL: "white wool", bl.LEAVES: "leaves",
-            bl.CHERRY_LEAVES: "cherry blossom", bl.LANTERN: "lanterns", bl.VINE_BLOCK: "vine blocks"}
+            bl.CHERRY_LEAVES: "cherry blossom", bl.AUTUMN_ORANGE: "orange autumn leaves",
+            bl.AUTUMN_RED: "red autumn leaves", bl.AUTUMN_GOLD: "golden autumn leaves", bl.AUTUMN_BROWN: "brown autumn leaves", bl.LANTERN: "lanterns", bl.VINE_BLOCK: "vine blocks"}
 LABEL_OVERRIDE = [(r"\bdojo", "dojo"), (r"\btaj|\bmosque", "domed mosque"), (r"\bkremlin|\bst basil", "onion-domed palace"),
                   (r"\beiffel", "Eiffel-style tower"), (r"\bbig ben|\bclock tower", "clock tower"), (r"\bwizard|\bmage\b", "wizard tower"),
                   (r"\bstonehenge", "Stonehenge"), (r"\bpumpkin", "pumpkin house"), (r"\bigloo", "igloo"),
@@ -1450,7 +1451,7 @@ pointy tall wide round square shape shaped colour color colours colors cool epic
 def _vocab():
     v = set(_COMMON)
     srcs = [rx for _, rx in KIND_RULES] + [rx for _, rx, *_ in STYLES] + [rx for rx, _ in MATERIALS + COLOURS + SIZE_WORDS] + \
-           [rx for _, rx in FEATURES] + [rx for rx, _ in GENERIC_HINTS]
+           [rx for _, rx in FEATURES] + [rx for rx, _ in GENERIC_HINTS] + [AUTUMN_RX.pattern]
     for rx in srcs:
         r2 = rx.replace("\\b", " ").replace(" ?", "")
         v.update(re.findall(r"[a-z]{4,}", r2))
@@ -1624,7 +1625,7 @@ def interpret(text):
 # ------------------------------------------------------------------ style effects (applied after the building is drawn)
 NEON = [bl.PINK_WOOL, bl.BLUE_WOOL, bl.LANTERN, bl.YELLOW_WOOL]
 RAINBOW = [bl.RED_WOOL, bl.SANDSTONE, bl.YELLOW_WOOL, bl.GREEN_WOOL, bl.BLUE_WOOL, bl.PINK_WOOL]
-STRUCT_KEEP = (AIR, bl.WATER, bl.GLASS, bl.LANTERN, bl.GRASS, bl.GRAVEL, bl.DIRT, bl.SAND, bl.LEAVES, bl.CHERRY_LEAVES)
+STRUCT_KEEP = (AIR, bl.WATER, bl.GLASS, bl.LANTERN, bl.GRASS, bl.GRAVEL, bl.DIRT, bl.SAND, bl.LEAVES, bl.CHERRY_LEAVES) + bl.AUTUMN_LEAVES
 
 
 def _outer(c, k):
@@ -1805,6 +1806,22 @@ def add_features(c, p, feats, P):
 
 
 
+AUTUMN_RX = re.compile(r"\bautumn|\bfall\b|\bfall colou?rs?|\bmaple|\bharvest season|\bseptember|\boctober|\bnovember|\bthanksgiving")
+
+
+def autumnize(c):
+    """1.4.0: autumn/fall prompts turn green leaves into a mix of orange, red, golden and brown autumn leaves."""
+    for k, v in list(c.b.items()):
+        if v == bl.LEAVES:
+            x, y, z = k
+            mix = (bl.AUTUMN_ORANGE, bl.AUTUMN_GOLD, bl.AUTUMN_RED, bl.AUTUMN_ORANGE, bl.AUTUMN_GOLD, bl.AUTUMN_BROWN)
+            g = mix[((x // 4) * 7 + (y // 4) * 13) % 6]
+            u = (x * 73856093 ^ y * 19349663 ^ z * 83492791) & 0xFFFF
+            c.b[k] = g if u % 100 < 70 else mix[(u >> 7) % 6]
+        elif v == bl.GRASS and ((k[0] * 31 + k[1] * 17) & 7) < 3:
+            c.b[k] = bl.LEAF_LITTER
+
+
 def generate(p):
     """Plan -> (Canvas, summary). Oversized builds are shrunk to fit MAX_DIM^3."""
     f, label, nominal, default_feats, uses_height = GEN.get(p.kind, GEN["generic"])
@@ -1821,6 +1838,8 @@ def generate(p):
         c = Canvas()
         f(c, pal, p)
         add_features(c, p, feats, pal)
+        if AUTUMN_RX.search(" " + (p.text or "").lower() + " ") or AUTUMN_RX.search(" " + p.norm + " "):
+            autumnize(c)
         c = apply_effects(c, p, pal)
         x0, x1, y0, y1, z0, z1 = c.bounds()
         if max(x1 - x0 + 1, y1 - y0 + 1, z1 - min(z0, 0) + 1) <= MAX_DIM:
