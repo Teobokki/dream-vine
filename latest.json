@@ -1,8 +1,8 @@
 {
-  "version": "1.3.2",
-  "url": "https://github.com/Teobokki/dream-vine/releases/download/v1.3.2/DREAM.VINE.Setup.1.3.2.exe",
-  "installer_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.3.2/DREAM.VINE.Setup.1.3.2.exe",
-  "full_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.3.2/DREAM.VINE.1.3.2.Windows.x64.zip",
-  "portable_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.3.2/DREAM.VINE.Portable.exe",
-  "notes": "DREAM VINE has moved to a new home (Teobokki/dream-vine). Updates, downloads and portable self-update now come from there. No gameplay changes from 1.3.1."
+  "version": "1.4.0",
+  "url": "https://github.com/Teobokki/dream-vine/releases/download/v1.4.0/DREAM.VINE.Setup.1.4.0.exe",
+  "installer_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.4.0/DREAM.VINE.Setup.1.4.0.exe",
+  "full_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.4.0/DREAM.VINE.1.4.0.Windows.x64.zip",
+  "portable_url": "https://github.com/Teobokki/dream-vine/releases/download/v1.4.0/DREAM.VINE.Portable.exe",
+  "notes": "Autumn Leaves! Autumn trees and Autumn Forest regions, gently falling leaves (in game and on the main menu), leaf carpets and piles, autumn leaf blocks in Creative, and Vine AI builds in autumn colours when you say autumn/fall."
 }
